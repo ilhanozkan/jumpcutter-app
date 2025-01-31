@@ -1,0 +1,30 @@
+{
+  "name": "jumpcutter",
+  "version": "1.0.0",
+  "description": "A Node.js package for processing videos and audio files by handling silent sections",
+  "main": "src/JumpCutter.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": [
+    "video",
+    "audio",
+    "processing",
+    "silence",
+    "ffmpeg",
+    "jumpcut"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
