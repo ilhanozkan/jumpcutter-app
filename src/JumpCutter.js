@@ -1,7 +1,9 @@
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegStatic = require("ffmpeg-static");
+const ffprobeStatic = require("ffprobe-static");
 
 ffmpeg.setFfmpegPath(ffmpegStatic.replace("app.asar", "app.asar.unpacked"));
+ffmpeg.setFfprobePath(ffprobeStatic.path.replace("app.asar", "app.asar.unpacked"));
 
 class JumpCutter {
   constructor(options = {}) {

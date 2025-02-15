@@ -21,6 +21,7 @@
   "license": "ISC",
   "dependencies": {
     "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "web-audio-api": "^0.2.2"
   },
