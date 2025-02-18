@@ -51,6 +51,85 @@ body {
   border-radius: var(--border-radius);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   flex: 2;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tab-button {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+  transition: all 0.3s ease;
+}
+
+.tab-button:hover {
+  background-color: rgba(33, 150, 243, 0.1);
+}
+
+.tab-button.active {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.tab-content {
+  flex: 1;
+}
+
+.tab-pane {
+  display: none;
+  height: 100%;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.video-container {
+  position: relative;
+  width: 100%;
+  background-color: #000;
+  border-radius: var(--border-radius);
+  aspect-ratio: 16/9;
+}
+
+.preview-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  border-radius: var(--border-radius);
+}
+
+.preview-loading .spinner {
+  margin-bottom: 10px;
+}
+
+.preview-loading.hidden {
+  display: none;
+}
+
+.preview-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .preview-title {
@@ -65,9 +144,12 @@ body {
   border-radius: var(--border-radius);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   position: relative;
-  height: 250px;
+  height: 200px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
+  margin-bottom: 20px;
+  overflow: hidden;
 }
 
 #audioSpectrum {
@@ -196,7 +278,12 @@ video {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
+}
+
+.spectrum-container.hidden {
+  display: none;
 }

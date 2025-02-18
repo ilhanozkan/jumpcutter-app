@@ -10,9 +10,42 @@ const outputFormat = document.getElementById("outputFormat");
 const processMode = document.getElementById("processMode");
 const processButton = document.getElementById("processButton");
 const previewVideo = document.getElementById("previewVideo");
+const processedVideo = document.getElementById("processedVideo");
 const processingOverlay = document.getElementById("processing");
+const previewLoading = document.getElementById("previewLoading");
+const saveButton = document.getElementById("saveButton");
 const canvas = document.getElementById("audioSpectrum");
 const thresholdLine = document.getElementById("thresholdLine");
+const tabButtons = document.querySelectorAll(".tab-button");
+
+// Tab switching functionality
+tabButtons.forEach(button => {
+  button.addEventListener("click", () => {
+    // If clicking the already active tab, do nothing
+    if (button.classList.contains("active")) {
+      return;
+    }
+
+    // Remove active class from all buttons and panes
+    tabButtons.forEach(btn => btn.classList.remove("active"));
+    document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.remove("active"));
+
+    // Pause both videos when switching tabs
+    previewVideo.pause();
+    processedVideo.pause();
+
+    // Add active class to clicked button and corresponding pane
+    button.classList.add("active");
+    document.getElementById(`${button.dataset.tab}-tab`).classList.add("active");
+
+    // Show/hide spectrum container based on active tab
+    if (button.dataset.tab === "processed") {
+      canvas.parentElement.classList.add("hidden");
+    } else {
+      canvas.parentElement.classList.remove("hidden");
+    }
+  });
+});
 
 // Audio Context and Analyzer
 let audioContext;
@@ -21,6 +54,7 @@ let dataArray;
 let selectedFile = null;
 let dbHistory = []; // Store dB history
 const HISTORY_SIZE = 500; // Show more history for better visualization
+let processedVideoPath = null;
 
 // Canvas Context
 const ctx = canvas.getContext("2d");
@@ -37,9 +71,17 @@ function initAudioContext() {
 
 // Setup Audio Analysis
 function setupAudioAnalysis(videoElement) {
-  const source = audioContext.createMediaElementSource(videoElement);
-  source.connect(analyser);
-  analyser.connect(audioContext.destination);
+  try {
+    if (audioContext) {
+      audioContext.close();
+    }
+    initAudioContext();
+    const source = audioContext.createMediaElementSource(videoElement);
+    source.connect(analyser);
+    analyser.connect(audioContext.destination);
+  } catch (error) {
+    console.error("Error setting up audio analysis:", error);
+  }
 }
 
 // Calculate dB from frequency data
@@ -207,16 +249,140 @@ thresholdSlider.addEventListener("input", () => {
   thresholdValue.textContent = `${thresholdSlider.value} dB`;
 });
 
-// Process Video
-processButton.addEventListener("click", async () => {
+// Reset video element state
+function resetVideoElement(videoElement) {
+  if (!videoElement) return;
+
+  videoElement.pause();
+  videoElement.removeAttribute('src');
+  videoElement.load();
+  videoElement.currentTime = 0;
+}
+
+// Process preview
+async function processPreview() {
   if (!selectedFile) return;
 
-  // Show save dialog
+  previewLoading.classList.remove("hidden");
+  saveButton.disabled = true;
+  processButton.disabled = true;
+
+  try {
+    // Reset processed video state and cleanup
+    resetVideoElement(processedVideo);
+
+    // Clean up any existing files
+    if (processedVideoPath) {
+      try {
+        const checkResult = await ipcRenderer.invoke("check-file", processedVideoPath);
+        if (checkResult.exists) {
+          await ipcRenderer.invoke("cleanup-file", processedVideoPath);
+        }
+      } catch (error) {
+        console.error("Error cleaning up previous file:", error);
+      }
+      processedVideoPath = null;
+    }
+
+    // Create a temporary file path for the preview
+    const previewPath = selectedFile.replace(/\.[^/.]+$/, "") +
+      `_preview_${Date.now()}.` +
+      outputFormat.value;
+
+    const result = await ipcRenderer.invoke("process-video", {
+      input: selectedFile,
+      output: previewPath,
+      threshold: parseInt(thresholdSlider.value),
+      minSilenceDuration: parseFloat(silenceDuration.value),
+      mode: processMode.value,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || "Processing failed");
+    }
+
+    // Set up video loading handlers before setting the source
+    const videoLoadPromise = new Promise((resolve, reject) => {
+      let timeoutId;
+
+      const handleError = (error) => {
+        clearTimeout(timeoutId);
+        processedVideo.removeEventListener('loadeddata', handleLoadedData);
+        processedVideo.removeEventListener('error', handleError);
+        reject(new Error(error?.message || "Failed to load video"));
+      };
+
+      const handleLoadedData = () => {
+        clearTimeout(timeoutId);
+        processedVideo.removeEventListener('loadeddata', handleLoadedData);
+        processedVideo.removeEventListener('error', handleError);
+        resolve();
+      };
+
+      timeoutId = setTimeout(() => {
+        handleError(new Error("Video loading timed out"));
+      }, 10000);
+
+      processedVideo.addEventListener('loadeddata', handleLoadedData, { once: true });
+      processedVideo.addEventListener('error', handleError, { once: true });
+    });
+
+    // Set new source and path
+    processedVideoPath = previewPath;
+    processedVideo.src = previewPath;
+
+    // Wait for the video to load or error out
+    await videoLoadPromise;
+
+    saveButton.disabled = false;
+
+    // Switch to processed tab
+    tabButtons.forEach(btn => {
+      if (btn.dataset.tab === "processed") {
+        btn.click();
+      }
+    });
+  } catch (error) {
+    console.error("Processing error:", error);
+    alert("Error processing preview: " + (error.message || "Unknown error occurred"));
+
+    // Reset video state
+    resetVideoElement(processedVideo);
+    processedVideoPath = null;
+    saveButton.disabled = true;
+
+    // Switch back to original tab if there's an error
+    tabButtons.forEach(btn => {
+      if (btn.dataset.tab === "original") {
+        btn.click();
+      }
+    });
+  } finally {
+    previewLoading.classList.add("hidden");
+    processButton.disabled = false;
+  }
+}
+
+// Add error handler for processed video
+processedVideo.addEventListener('error', () => {
+  if (processedVideo.error) {
+    console.error('Error loading processed video:', processedVideo.error);
+    previewLoading.classList.add("hidden");
+    processButton.disabled = false;
+    alert("Error loading processed video preview: " + (processedVideo.error.message || "Unknown error"));
+
+    // Reset video state on error
+    processedVideo.removeAttribute('src');
+    processedVideo.load();
+  }
+});
+
+// Save processed video
+async function saveProcessedVideo() {
+  if (!processedVideoPath) return;
+
   const result = await ipcRenderer.invoke("show-save-dialog", {
-    defaultPath:
-      selectedFile.replace(/\.[^/.]+$/, "") +
-      "_processed." +
-      outputFormat.value,
+    defaultPath: processedVideoPath.replace("_preview.", "_processed."),
   });
 
   if (!result.filePath) return; // User cancelled
@@ -224,21 +390,58 @@ processButton.addEventListener("click", async () => {
   processingOverlay.classList.remove("hidden");
 
   try {
-    await ipcRenderer.invoke("process-video", {
-      input: selectedFile,
+    // Copy the preview file to the selected destination
+    await ipcRenderer.invoke("save-processed-video", {
+      input: processedVideoPath,
       output: result.filePath,
-      threshold: parseInt(thresholdSlider.value),
-      minSilenceDuration: parseFloat(silenceDuration.value),
-      mode: processMode.value,
     });
 
-    alert("Processing complete!");
+    // Update the current preview to use the saved file
+    const videoLoadPromise = new Promise((resolve, reject) => {
+      const handleError = (error) => {
+        processedVideo.removeEventListener('loadeddata', handleLoadedData);
+        reject(error);
+      };
+
+      const handleLoadedData = () => {
+        processedVideo.removeEventListener('error', handleError);
+        resolve();
+      };
+
+      processedVideo.addEventListener('loadeddata', handleLoadedData, { once: true });
+      processedVideo.addEventListener('error', handleError, { once: true });
+    });
+
+    // Update the video source to the saved file
+    processedVideo.src = result.filePath;
+    await videoLoadPromise;
+
+    // Clean up the preview file
+    await ipcRenderer.invoke("cleanup-file", processedVideoPath);
+
+    // Update the path to the saved file
+    processedVideoPath = result.filePath;
+
+    alert("Video saved successfully!");
   } catch (error) {
-    alert("Error processing video: " + error.message);
+    alert("Error saving video: " + error.message);
   } finally {
     processingOverlay.classList.add("hidden");
   }
+}
+
+// Clean up on window unload
+window.addEventListener('beforeunload', () => {
+  if (processedVideoPath && processedVideoPath.includes('_preview.')) {
+    ipcRenderer.invoke("cleanup-file", processedVideoPath).catch(console.error);
+  }
 });
+
+// Process Button triggers preview
+processButton.addEventListener("click", processPreview);
+
+// Save Button handler
+saveButton.addEventListener("click", saveProcessedVideo);
 
 // Resize canvas on window resize
 function resizeCanvas() {

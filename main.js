@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require('fs').promises;
 
 const JumpCutter = require("./src/JumpCutter.js");
 
@@ -58,6 +59,28 @@ ipcMain.handle("process-video", async (event, options) => {
 
     return { success: true };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("save-processed-video", async (event, options) => {
+  try {
+    // Use fs.copyFile to copy the preview file to the final destination
+    await fs.copyFile(options.input, options.output);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("cleanup-file", async (event, filePath) => {
+  try {
+    await fs.access(filePath); // Check if file exists
+    await fs.unlink(filePath);
+    return { success: true };
+  } catch (error) {
+    // If file doesn't exist or can't be deleted, just log and continue
+    console.error("Error cleaning up file:", error);
     return { success: false, error: error.message };
   }
 });
