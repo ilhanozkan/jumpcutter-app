@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
-const path = require("path");
 const fs = require('fs').promises;
 
 const JumpCutter = require("./src/JumpCutter.js");
@@ -97,4 +96,32 @@ ipcMain.handle("show-save-dialog", async (event, options) => {
     properties: ["createDirectory", "showOverwriteConfirmation"],
   });
   return result;
+});
+
+ipcMain.handle("process-video-memory", async (event, options) => {
+  try {
+    const cutter = new JumpCutter({
+      silenceThreshold: options.threshold,
+      minSilenceDuration: options.minSilenceDuration,
+    });
+
+    const buffer = await cutter.processToBuffer({
+      input: options.input,
+      mode: options.mode,
+      outputFormat: options.outputFormat
+    });
+
+    return { success: true, buffer: buffer };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("save-buffer-to-file", async (event, options) => {
+  try {
+    await fs.writeFile(options.output, options.buffer);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });

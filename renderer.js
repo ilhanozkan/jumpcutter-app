@@ -9,7 +9,7 @@ const silenceDuration = document.getElementById("silenceDuration");
 const outputFormat = document.getElementById("outputFormat");
 const processMode = document.getElementById("processMode");
 const processButton = document.getElementById("processButton");
-const previewVideo = document.getElementById("previewVideo");
+let originalVideo = document.getElementById("originalVideo");
 const processedVideo = document.getElementById("processedVideo");
 const processingOverlay = document.getElementById("processing");
 const previewLoading = document.getElementById("previewLoading");
@@ -30,9 +30,9 @@ tabButtons.forEach(button => {
     tabButtons.forEach(btn => btn.classList.remove("active"));
     document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.remove("active"));
 
-    // Pause both videos when switching tabs
-    previewVideo.pause();
-    processedVideo.pause();
+    // Handle video playback
+    handlePlaybackState(originalVideo, false);
+    handlePlaybackState(processedVideo, false);
 
     // Add active class to clicked button and corresponding pane
     button.classList.add("active");
@@ -48,40 +48,100 @@ tabButtons.forEach(button => {
 });
 
 // Audio Context and Analyzer
-let audioContext;
-let analyser;
-let dataArray;
+let audioContext = null;
+let analyser = null;
+let audioSource = null;
+let dataArray = null;
 let selectedFile = null;
 let dbHistory = []; // Store dB history
 const HISTORY_SIZE = 500; // Show more history for better visualization
-let processedVideoPath = null;
+let processedVideoBlob = null;
+let isAnalyzing = false;
+let animationFrameId = null;
 
 // Canvas Context
 const ctx = canvas.getContext("2d");
 
 // Initialize Audio Context
 function initAudioContext() {
-  audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.2; // Less smoothing for more responsive visualization
-  const bufferLength = analyser.frequencyBinCount;
-  dataArray = new Uint8Array(bufferLength);
-}
-
-// Setup Audio Analysis
-function setupAudioAnalysis(videoElement) {
   try {
     if (audioContext) {
       audioContext.close();
     }
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.2;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+  } catch (error) {
+    console.error("Error initializing audio context:", error);
+  }
+}
+
+// Setup Audio Analysis
+async function setupAudioAnalysis(videoElement) {
+  try {
+    // Clean up any existing audio context and connections first
+    cleanupAudioAnalysis();
+
+    // Initialize new audio context
     initAudioContext();
-    const source = audioContext.createMediaElementSource(videoElement);
-    source.connect(analyser);
+
+    // Create and connect new audio source
+    audioSource = audioContext.createMediaElementSource(videoElement);
+    audioSource.connect(analyser);
     analyser.connect(audioContext.destination);
+
+    // Start analysis if video is already playing
+    if (!videoElement.paused) {
+      startAnalysis();
+    }
+
+    // Add event listeners for playback state
+    videoElement.addEventListener('play', startAnalysis);
+    videoElement.addEventListener('pause', stopAnalysis);
+    videoElement.addEventListener('ended', stopAnalysis);
   } catch (error) {
     console.error("Error setting up audio analysis:", error);
   }
+}
+
+function startAnalysis() {
+  if (!isAnalyzing) {
+    isAnalyzing = true;
+    cancelAnimationFrame(animationFrameId);
+    drawSpectrum();
+  }
+}
+
+function stopAnalysis() {
+  isAnalyzing = false;
+  cancelAnimationFrame(animationFrameId);
+  dbHistory = [];
+}
+
+// Clean up audio analysis
+function cleanupAudioAnalysis() {
+  stopAnalysis();
+  if (audioSource) {
+    try {
+      audioSource.disconnect();
+    } catch (error) {
+      console.error("Error disconnecting audio source:", error);
+    }
+    audioSource = null;
+  }
+  if (audioContext) {
+    try {
+      audioContext.close();
+    } catch (error) {
+      console.error("Error closing audio context:", error);
+    }
+    audioContext = null;
+  }
+  analyser = null;
+  dataArray = null;
+  dbHistory = [];
 }
 
 // Calculate dB from frequency data
@@ -109,17 +169,30 @@ function calculateDB(frequencyData) {
 
 // Draw Audio Spectrum
 function drawSpectrum() {
-  requestAnimationFrame(drawSpectrum);
-
-  analyser.getByteFrequencyData(dataArray);
-  const currentDB = calculateDB(dataArray);
-
-  // Add current dB to history
-  dbHistory.push(currentDB);
-  if (dbHistory.length > HISTORY_SIZE) {
-    dbHistory.shift();
+  if (!isAnalyzing || !analyser || !dataArray) {
+    return;
   }
 
+  try {
+    animationFrameId = requestAnimationFrame(drawSpectrum);
+
+    analyser.getByteFrequencyData(dataArray);
+    const currentDB = calculateDB(dataArray);
+
+    dbHistory.push(currentDB);
+    if (dbHistory.length > HISTORY_SIZE) {
+      dbHistory.shift();
+    }
+
+    drawVisualization(currentDB);
+  } catch (error) {
+    console.error("Error in drawSpectrum:", error);
+    stopAnalysis();
+  }
+}
+
+// Draw visualization (separate the drawing logic)
+function drawVisualization(currentDB) {
   const width = canvas.width;
   const height = canvas.height;
 
@@ -218,29 +291,80 @@ function drawSpectrum() {
   ctx.fillText(`Threshold: ${thresholdDb}dB`, 10, normalizedThreshold - 5);
 }
 
+// Reset video element state
+function resetVideoElement(videoElement) {
+  if (!videoElement) return;
+
+  videoElement.pause();
+  const currentSrc = videoElement.src;
+  videoElement.src = '';
+  videoElement.load();
+  videoElement.currentTime = 0;
+
+  if (arguments.length > 1 && arguments[1] === true && currentSrc) {
+    videoElement.src = currentSrc;
+  }
+}
+
+// Handle video playback state
+function handlePlaybackState(videoElement, play = true) {
+  if (!videoElement) return;
+
+  if (play) {
+    // Ensure video is at the beginning if it ended
+    if (videoElement.ended) {
+      videoElement.currentTime = 0;
+    }
+
+    // Start playback
+    const playPromise = videoElement.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(error => {
+        console.error("Error playing video:", error);
+      });
+    }
+  } else {
+    videoElement.pause();
+  }
+}
+
 // File Selection
 selectFileBtn.addEventListener("click", async () => {
   const filePath = await ipcRenderer.invoke("select-file");
   if (filePath) {
     selectedFile = filePath;
     fileName.textContent = filePath.split("/").pop();
-    previewVideo.src = filePath;
-    processButton.disabled = false;
 
-    // Initialize audio context on first interaction
-    if (!audioContext) {
-      initAudioContext();
+    // Clean up existing analysis
+    cleanupAudioAnalysis();
+
+    // Create a new video element
+    const newVideo = document.createElement('video');
+    newVideo.id = 'originalVideo';
+    newVideo.controls = true;
+
+    // Get the current video container
+    const videoContainer = document.getElementById("originalVideo").parentNode;
+    if (!videoContainer) {
+      console.error("Could not find video container");
+      return;
     }
 
-    previewVideo.onplay = () => {
-      // Resume audio context if it was suspended
-      if (audioContext.state === "suspended") {
-        audioContext.resume();
-      }
+    // Copy classes from original video
+    if (originalVideo) {
+      newVideo.className = originalVideo.className;
+    }
 
-      setupAudioAnalysis(previewVideo);
-      drawSpectrum();
-    };
+    // Replace old video element
+    videoContainer.replaceChild(newVideo, originalVideo);
+    originalVideo = newVideo; // Now this will work since originalVideo is declared with let
+
+    // Set up new video
+    originalVideo.src = filePath;
+    processButton.disabled = false;
+
+    // Set up new analysis
+    await setupAudioAnalysis(originalVideo);
   }
 });
 
@@ -248,16 +372,6 @@ selectFileBtn.addEventListener("click", async () => {
 thresholdSlider.addEventListener("input", () => {
   thresholdValue.textContent = `${thresholdSlider.value} dB`;
 });
-
-// Reset video element state
-function resetVideoElement(videoElement) {
-  if (!videoElement) return;
-
-  videoElement.pause();
-  videoElement.removeAttribute('src');
-  videoElement.load();
-  videoElement.currentTime = 0;
-}
 
 // Process preview
 async function processPreview() {
@@ -268,38 +382,29 @@ async function processPreview() {
   processButton.disabled = true;
 
   try {
-    // Reset processed video state and cleanup
+    // Reset processed video state
     resetVideoElement(processedVideo);
 
-    // Clean up any existing files
-    if (processedVideoPath) {
-      try {
-        const checkResult = await ipcRenderer.invoke("check-file", processedVideoPath);
-        if (checkResult.exists) {
-          await ipcRenderer.invoke("cleanup-file", processedVideoPath);
-        }
-      } catch (error) {
-        console.error("Error cleaning up previous file:", error);
-      }
-      processedVideoPath = null;
+    // Revoke any existing blob URL
+    if (processedVideo.src && processedVideo.src.startsWith('blob:')) {
+      URL.revokeObjectURL(processedVideo.src);
     }
 
-    // Create a temporary file path for the preview
-    const previewPath = selectedFile.replace(/\.[^/.]+$/, "") +
-      `_preview_${Date.now()}.` +
-      outputFormat.value;
-
-    const result = await ipcRenderer.invoke("process-video", {
+    const result = await ipcRenderer.invoke("process-video-memory", {
       input: selectedFile,
-      output: previewPath,
       threshold: parseInt(thresholdSlider.value),
       minSilenceDuration: parseFloat(silenceDuration.value),
       mode: processMode.value,
+      outputFormat: outputFormat.value
     });
 
     if (!result.success) {
       throw new Error(result.error || "Processing failed");
     }
+
+    // Create blob URL from the processed video buffer
+    const videoBlob = new Blob([Buffer.from(result.buffer)], { type: `video/${outputFormat.value}` });
+    const blobUrl = URL.createObjectURL(videoBlob);
 
     // Set up video loading handlers before setting the source
     const videoLoadPromise = new Promise((resolve, reject) => {
@@ -327,13 +432,14 @@ async function processPreview() {
       processedVideo.addEventListener('error', handleError, { once: true });
     });
 
-    // Set new source and path
-    processedVideoPath = previewPath;
-    processedVideo.src = previewPath;
+    // Set new source
+    processedVideo.src = blobUrl;
 
     // Wait for the video to load or error out
     await videoLoadPromise;
 
+    // Store the blob for later saving
+    processedVideoBlob = videoBlob;
     saveButton.disabled = false;
 
     // Switch to processed tab
@@ -348,7 +454,7 @@ async function processPreview() {
 
     // Reset video state
     resetVideoElement(processedVideo);
-    processedVideoPath = null;
+    processedVideoBlob = null;
     saveButton.disabled = true;
 
     // Switch back to original tab if there's an error
@@ -363,26 +469,12 @@ async function processPreview() {
   }
 }
 
-// Add error handler for processed video
-processedVideo.addEventListener('error', () => {
-  if (processedVideo.error) {
-    console.error('Error loading processed video:', processedVideo.error);
-    previewLoading.classList.add("hidden");
-    processButton.disabled = false;
-    alert("Error loading processed video preview: " + (processedVideo.error.message || "Unknown error"));
-
-    // Reset video state on error
-    processedVideo.removeAttribute('src');
-    processedVideo.load();
-  }
-});
-
 // Save processed video
 async function saveProcessedVideo() {
-  if (!processedVideoPath) return;
+  if (!processedVideoBlob) return;
 
   const result = await ipcRenderer.invoke("show-save-dialog", {
-    defaultPath: processedVideoPath.replace("_preview.", "_processed."),
+    defaultPath: selectedFile.replace(/\.[^/.]+$/, "") + "_processed." + outputFormat.value,
   });
 
   if (!result.filePath) return; // User cancelled
@@ -390,37 +482,12 @@ async function saveProcessedVideo() {
   processingOverlay.classList.remove("hidden");
 
   try {
-    // Copy the preview file to the selected destination
-    await ipcRenderer.invoke("save-processed-video", {
-      input: processedVideoPath,
+    // Convert blob to buffer and save
+    const buffer = Buffer.from(await processedVideoBlob.arrayBuffer());
+    await ipcRenderer.invoke("save-buffer-to-file", {
+      buffer: buffer,
       output: result.filePath,
     });
-
-    // Update the current preview to use the saved file
-    const videoLoadPromise = new Promise((resolve, reject) => {
-      const handleError = (error) => {
-        processedVideo.removeEventListener('loadeddata', handleLoadedData);
-        reject(error);
-      };
-
-      const handleLoadedData = () => {
-        processedVideo.removeEventListener('error', handleError);
-        resolve();
-      };
-
-      processedVideo.addEventListener('loadeddata', handleLoadedData, { once: true });
-      processedVideo.addEventListener('error', handleError, { once: true });
-    });
-
-    // Update the video source to the saved file
-    processedVideo.src = result.filePath;
-    await videoLoadPromise;
-
-    // Clean up the preview file
-    await ipcRenderer.invoke("cleanup-file", processedVideoPath);
-
-    // Update the path to the saved file
-    processedVideoPath = result.filePath;
 
     alert("Video saved successfully!");
   } catch (error) {
@@ -432,8 +499,9 @@ async function saveProcessedVideo() {
 
 // Clean up on window unload
 window.addEventListener('beforeunload', () => {
-  if (processedVideoPath && processedVideoPath.includes('_preview.')) {
-    ipcRenderer.invoke("cleanup-file", processedVideoPath).catch(console.error);
+  cleanupAudioAnalysis();
+  if (processedVideo.src && processedVideo.src.startsWith('blob:')) {
+    URL.revokeObjectURL(processedVideo.src);
   }
 });
 
