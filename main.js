@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const fs = require('fs').promises;
 
-const JumpCutter = require("./src/JumpCutter.js");
+const JumpCutter = require("@ilhanozkan/jumpcutter");
 
 let mainWindow;
 

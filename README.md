@@ -1,44 +1,32 @@
-# JumpCutter
+# JumpCutter App
 
-A Node.js package for processing videos and audio files by handling silent sections. You can either remove silent parts or speed them up.
+An Electron app for cutting out or speeding up silences from videos/audios using [JumpCutter](https://github.com/ilhanozkan/jumpcutter).
+
+![Overview](https://github.com/user-attachments/assets/d30660e2-2ed9-4a3f-9b06-9d7938c8fe88)
+
+## Features
+
+- Cut out or speed up silences from videos/audios
+- Adjust the threshold of the silence detection
+- Adjust the minimum duration of the silence to be cut/speed up
+- Preview the cut video in the app
+- Save the cut video to a new file
+- Change the output format
 
 ## Installation
 
 ```bash
-npm install jumpcutter
+npm install
 ```
 
-## Usage
+## Run
 
-```javascript
-const JumpCutter = require('jumpcutter');
-
-// Create a new instance
-const cutter = new JumpCutter({
-    silenceThreshold: -30, // dB threshold for silence detection
-    minSilenceDuration: 0.5, // minimum silence duration in seconds
-});
-
-// Remove silent parts
-await cutter.process({
-    input: 'input.mp4',
-    output: 'output.mp4',
-    mode: 'remove' // or 'speed' to make silent parts faster
-});
+```bash
+npm start
 ```
 
-## Options
+## Build
 
-- `silenceThreshold`: Threshold in dB for silence detection (default: -30)
-- `minSilenceDuration`: Minimum duration of silence to process in seconds (default: 0.5)
-- `mode`: 'remove' to delete silent parts, 'speed' to make them faster
-- `speedFactor`: Speed multiplier for silent parts when using 'speed' mode (default: 2)
-
-## Requirements
-
-- Node.js 14 or higher
-- FFmpeg (included via ffmpeg-static)
-
-## License
-
-ISC
+```bash
+npm run build
+```
