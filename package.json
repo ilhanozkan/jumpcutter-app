@@ -18,12 +18,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ilhanozkan/jumpcutter": "^1.0.0",
-    "ffmpeg-static": "^5.2.0",
-    "ffprobe-static": "^3.1.0",
-    "fluent-ffmpeg": "^2.1.2",
-    "tmp-promise": "^3.0.3",
-    "web-audio-api": "^0.2.2"
+    "@ilhanozkan/jumpcutter": "^1.0.0"
   },
   "devDependencies": {
     "electron": "^34.1.1",
